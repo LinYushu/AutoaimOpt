@@ -28,10 +28,11 @@ void Pipeline::tracker_baseline_thread(
         initReprojection(small_width, small_height, big_width, big_height, small_path, big_path);
     }
 
-    rm::CycleQueue<double> delay_list(100);
+    rm::CycleQueue<double> delay_list(200);
     TimePoint tp0, tp1, tp2;
     tp0 = getTime();
 
+    static int print_counter = 0;
     std::mutex mutex;
     while (true) {
         if (!Data::armor_mode) {
@@ -65,8 +66,11 @@ void Pipeline::tracker_baseline_thread(
         tp0 = tp2;
         double fps = 1.0 / delay_list.getAvg();
         rm::message("fps", fps);
-        // rm::message("fps: " + std::to_string(fps) + "\n");
-
+        // print_counter++;
+        // if (print_counter % 50 == 0) {
+        //     // rm::message("fps: " + std::to_string(fps));
+        // }
+        
         if (Data::image_flag) {
             if (Data::ui_flag) UI(frame);
             imshow(frame);

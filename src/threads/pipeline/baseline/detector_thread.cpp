@@ -1,6 +1,7 @@
 #include "threads/pipeline.h"
 #include <unistd.h>
 #include <iostream>
+#include <thread>
 #include <openrm/cudatools.h>
 #include "nvtx3/nvtx3.hpp"
 
@@ -74,17 +75,27 @@ void Pipeline::detector_baseline_thread(
         }
 
         tp0 = getTime();
-        while(!flag_in) {
-            if (getDoubleOfS(tp0, getTime()) > 10.0 && Data::timeout_flag) {
-                rm::message("Detector timeout", rm::MSG_ERROR);
-                exit(-1);
-            }
-        }
-        
+
         std::unique_lock<std::mutex> lock_in(mutex_in);
+        if (!flag_in) {
+            detect_cv_.wait_for(lock_in, std::chrono::milliseconds(15), [&] {
+                return flag_in;
+            });
+        } 
+        if (!flag_in) {
+            lock_in.unlock();
+            continue;
+        }
         std::shared_ptr<rm::Frame> frame = frame_in;
         flag_in = false;
         lock_in.unlock();
+
+
+        // double wait_time_ms = getDoubleOfS(tp0, getTime()) * 1000.0;
+        // // 150帧时理论每帧间隔不到7ms，如果等待超过 12ms，说明上游(相机或预处理)卡了
+        // if (wait_time_ms > 5.0) { 
+        //     // rm::message("[AbnormalSpike-Probe 1] Det waiting for image: " + std::to_string(wait_time_ms) + " ms");
+        // }
 
         tp1 = getTime();
         {
@@ -145,7 +156,14 @@ void Pipeline::detector_baseline_thread(
         cudaGraphLaunch(graphExec[local_buf_idx], detect_stream_);
 
         cudaEventRecord(detect_complete_event_[local_buf_idx], detect_stream_);
+
+        // TimePoint gpu_wait_start = getTime();
         cudaEventSynchronize(detect_complete_event_[local_buf_idx]);
+        // double gpu_sync_time_ms = getDoubleOfS(gpu_wait_start, getTime()) * 1000.0;
+        // // 正常的网络推理+NMS在边缘端显卡上通常在 2~5ms 以内
+        // if (gpu_sync_time_ms > 6.0) {
+        //     // rm::message("[AbnormalSpike-Probe 2] GPU infer and sync time exception:" + std::to_string(gpu_sync_time_ms) + " ms");
+        // }
 
         frame->yolo_list.clear();
         int valid_count = *(int*)curr_output_host;
@@ -193,6 +211,13 @@ void Pipeline::detector_baseline_thread(
         } // nvtx scope 结束
 
         tp2 = getTime();
+
+        // double process_time_ms = getDoubleOfS(tp1, tp2) * 1000.0;
+        // // 正常情况下纯检测处理(不含等图)耗时非常稳定，若超过 10ms 则说明 CPU/GPU 配合出现严重阻塞
+        // if (process_time_ms > 7.0) {
+        //     // rm::message("[AbnormalSpike-Probe 3] Total time of single frame detection:" + std::to_string(process_time_ms) + " ms");
+        // }
+
         if (Data::pipeline_delay_flag) {
           rm::message("detect", getDoubleOfS(tp1, tp2) * 1000);
         }

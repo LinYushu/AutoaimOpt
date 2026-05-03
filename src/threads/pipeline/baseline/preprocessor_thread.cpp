@@ -1,6 +1,7 @@
 #include "threads/pipeline.h"
 #include <unistd.h>
 #include <iostream>
+#include <thread>
 #include <openrm/cudatools.h>
 #include "nvtx3/nvtx3.hpp"
 
@@ -68,14 +69,13 @@ void Pipeline::preprocessor_baseline_thread(
         Camera* camera = Data::camera[Data::camera_index];
         std::shared_ptr<rm::Frame> frame = camera->buffer->pop();
 
-        frame_wait = getTime();
-        while(frame == nullptr) {
-            frame = camera->buffer->pop();
-            double delay = getDoubleOfS(frame_wait, getTime());
-            if (delay > 0.5 && Data::timeout_flag) {
-                rm::message("Capture timeout", rm::MSG_ERROR);
-                exit(-1);
-            }
+        if (frame == nullptr) {
+            std::unique_lock<std::mutex> lock(camera->frame_mutex);
+            camera->frame_cv.wait_for(lock, std::chrono::milliseconds(15), [&] {
+                frame = camera->buffer->pop();
+                return frame != nullptr;
+            });
+            if (frame == nullptr) continue;
         }
 
         tp1 = getTime();
@@ -118,19 +118,18 @@ void Pipeline::preprocessor_baseline_thread(
         //   rm::message("Pre: " + std::to_string(getDoubleOfS(tp1, tp2) * 1000) + "ms");
         }
 
-        flag_wait = getTime();
-        while(flag_out) {
-            if (getDoubleOfS(flag_wait, getTime()) > 10.0 && Data::timeout_flag) {
-                rm::message("Preprocessor timeout", rm::MSG_ERROR);
-                exit(-1);
-            }
-        }
-
         buffer_idx_ = 1 - buffer_idx_;
         first_run_ = false;
+
+        // std::unique_lock<std::mutex> lock_out(mutex_out);
+        // frame_out = frame;
+        // flag_out = true;
 
         std::unique_lock<std::mutex> lock_out(mutex_out);
         frame_out = frame;
         flag_out = true;
+        lock_out.unlock();
+        // 瞬间唤醒检测线程
+        detect_cv_.notify_one();
     }
 }

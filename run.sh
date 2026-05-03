@@ -145,14 +145,14 @@ if [ $usensys = 1 ]; then
         sudo nsys profile \
             --trace=cuda,nvtx,osrt \
             -y 10 -d 10 \
-            --output=autoaim_nsys \
+            --output=autoaim \
             --force-overwrite=true \
             TJURM-2024 -s
     else
         sudo nsys profile \
             --trace=cuda,nvtx,osrt \
             -y 10 -d 10 \
-            --output=autoaim_nsys \
+            --output=autoaim \
             --force-overwrite=true \
             TJURM-2024
     fi

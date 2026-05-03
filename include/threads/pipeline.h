@@ -38,6 +38,8 @@ public:
     bool UI(std::shared_ptr<rm::Frame> frame);
     bool monitor(std::shared_ptr<rm::Frame> frame);
 
+    std::condition_variable detect_cv_;
+
     void preprocessor_fourpoints_thread(
         std::mutex& mutex_out, bool& flag_out, std::shared_ptr<rm::Frame>& frame_out);
 
